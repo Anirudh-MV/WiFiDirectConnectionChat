@@ -48,7 +48,7 @@ public class MainActivity extends AppCompatActivity {
     WifiP2pManager mManager;
     WifiP2pManager.Channel mChannel;
 
-    BroadcastReceiver mReciver;
+    BroadcastReceiver mReceiver;
     IntentFilter mIntentFilter;
 
     List<WifiP2pDevice> peers=new ArrayList<WifiP2pDevice>();
@@ -59,6 +59,7 @@ public class MainActivity extends AppCompatActivity {
     ServerClass serverClass;
     ClientClass clientClass;
     SendReceive sendReceive;
+    ArrayList<SendReceive> sendReceiveArrayList;
 
     boolean groupCreated;
     boolean serverCreated;
@@ -82,7 +83,6 @@ public class MainActivity extends AppCompatActivity {
                     String tempMsg=new String(readBuff,0,msg.arg1);
                     read_msg_box.setText(tempMsg);
                     Log.d("Message - ", tempMsg);
-
                     break;
             }
             return true;
@@ -173,7 +173,14 @@ public class MainActivity extends AppCompatActivity {
                 writeMsg=(EditText) findViewById(R.id.writeMsg);
                 String msg=writeMsg.getText().toString();
                 try {
-                    sendReceive.write(msg.getBytes());
+                    if(serverCreated) {
+                        for(SendReceive sendReceiveDevice: sendReceiveArrayList){
+                            sendReceiveDevice.write(msg.getBytes());
+                        }
+                    }
+                    else{
+                        sendReceive.write(msg.getBytes());
+                    }
                 }
                 catch (Exception e){
                     e.printStackTrace();
@@ -198,14 +205,13 @@ public class MainActivity extends AppCompatActivity {
         mManager = (WifiP2pManager) getSystemService(Context.WIFI_P2P_SERVICE);
         mChannel = mManager.initialize(this,getMainLooper(),null);
 
-        mReciver=new WifiDirectBroadcastReceiver(mManager, mChannel,this);
+        mReceiver =new WifiDirectBroadcastReceiver(mManager, mChannel,this);
         mIntentFilter=new IntentFilter();
 
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_STATE_CHANGED_ACTION);
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_PEERS_CHANGED_ACTION);
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_CONNECTION_CHANGED_ACTION);
         mIntentFilter.addAction(WifiP2pManager.WIFI_P2P_THIS_DEVICE_CHANGED_ACTION);
-
 
     }
 
@@ -268,22 +274,19 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onResume() {
         super.onResume();
-        registerReceiver(mReciver,mIntentFilter);
+        registerReceiver(mReceiver,mIntentFilter);
     }
 
     @Override
     protected void onPause() {
         super.onPause();
-        unregisterReceiver(mReciver);
+        unregisterReceiver(mReceiver);
     }
 
     public class ServerClass extends  Thread{
         Socket socket;
-        ArrayList<Socket> socketArray;
         ServerSocket serverSocket;
-        ArrayList<SendReceive> sendReceiveArrayList;
         public ServerClass(){
-            socketArray = new ArrayList<Socket>();
             sendReceiveArrayList = new ArrayList<SendReceive>();
         }
         @Override
@@ -297,6 +300,7 @@ public class MainActivity extends AppCompatActivity {
                     Log.d("ServerClass", "run() accepted connection from "+socket.getInetAddress().getHostName());
                     sendReceive = new SendReceive(socket);
                     sendReceiveArrayList.add(sendReceive);
+                    Log.d("SendReceive Size", String.valueOf(sendReceiveArrayList.size()));
                     Log.d("ServerClass", "run() added client to sendReceiveArrayList");
                     sendReceive.start();
                 }
@@ -311,11 +315,11 @@ public class MainActivity extends AppCompatActivity {
         private InputStream inputStream;
         private OutputStream outputStream;
 
-        public SendReceive(Socket skt)  {
-            socket=skt;
+        public SendReceive(Socket socket)  {
+            this.socket=socket;
             try {
-                inputStream=socket.getInputStream();
-                outputStream=socket.getOutputStream();
+                inputStream=this.socket.getInputStream();
+                outputStream=this.socket.getOutputStream();
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -331,8 +335,18 @@ public class MainActivity extends AppCompatActivity {
                 try {
                     bytes=inputStream.read(buffer);
                     if(bytes>0){
-                        handler.obtainMessage(MESSAGE_READ,bytes,-1 ,buffer).sendToTarget();
                         Log.d("MessageReceived", "from "  + socket.getInetAddress().getHostAddress());
+                        handler.obtainMessage(MESSAGE_READ,bytes,-1 ,buffer).sendToTarget();
+                        if(serverCreated) {
+                            Log.d("Forwarding", "Start forwarding messages because I'm the GO");
+                            for (SendReceive sendReceiveDevice : sendReceiveArrayList) {
+                                if (sendReceiveDevice != this) {
+                                    Log.d("Forwarding Message", "from "+socket.getInetAddress().getHostAddress()+
+                                            " to "+sendReceiveDevice.socket.getInetAddress().getHostAddress());
+                                    sendReceiveDevice.write(buffer);
+                                }
+                            }
+                        }
                     }
 
                 } catch (IOException e) {
