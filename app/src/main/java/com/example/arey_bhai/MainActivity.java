@@ -57,7 +57,7 @@ public class MainActivity extends AppCompatActivity {
     static final int MESSAGE_READ=1;
     ServerClass serverClass;
     ClientClass clientClass;
-    SendReceive sendRecive;
+    SendReceive sendReceive;
 
 
     @Override
@@ -165,7 +165,7 @@ public class MainActivity extends AppCompatActivity {
                 writeMsg=(EditText) findViewById(R.id.writeMsg);
                 String msg=writeMsg.getText().toString();
                 try {
-                    sendRecive.write(msg.getBytes());
+                    sendReceive.write(msg.getBytes());
                 }
                 catch (Exception e){
                     e.printStackTrace();
@@ -269,9 +269,11 @@ public class MainActivity extends AppCompatActivity {
             try {
                 serverSocket=new ServerSocket(2323);
                 serverSocket.setReuseAddress(true);
-                socket=serverSocket.accept();
-                sendRecive=new SendReceive(socket);
-                sendRecive.start();
+                while(true) {
+                    socket = serverSocket.accept();
+                    sendReceive = new SendReceive(socket);
+                    sendReceive.start();
+                }
             } catch (IOException e) {
                 e.printStackTrace();
             }
@@ -338,8 +340,8 @@ public class MainActivity extends AppCompatActivity {
         public void run() {
             try {
                 socket.connect(new InetSocketAddress(hostAdd,2323),500);
-                sendRecive=new SendReceive(socket);
-                sendRecive.start();
+                sendReceive =new SendReceive(socket);
+                sendReceive.start();
             } catch (IOException e) {
                 e.printStackTrace();
             }
