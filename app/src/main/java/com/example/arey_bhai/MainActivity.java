@@ -31,11 +31,14 @@ import android.widget.Toast;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.Inet4Address;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.net.SocketException;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
@@ -60,7 +63,7 @@ public class MainActivity extends AppCompatActivity {
     ClientClass clientClass;
     SendReceive sendReceive;
     ArrayList<SendReceive> sendReceiveArrayList;
-
+    HashMap<InetAddress, SendReceive> sendReceiveHashMap;
     boolean groupCreated;
     boolean serverCreated;
 
@@ -174,8 +177,13 @@ public class MainActivity extends AppCompatActivity {
                 String msg=writeMsg.getText().toString();
                 try {
                     if(serverCreated) {
-                        for(SendReceive sendReceiveDevice: sendReceiveArrayList){
-                            sendReceiveDevice.write(msg.getBytes());
+                        for(SendReceive sendReceiveDevice: sendReceiveHashMap.values()){
+                            try {
+                                sendReceiveDevice.write(msg.getBytes());
+                            }
+                            catch(Exception e){
+                                Log.e("Exception is " ,  e.toString());
+                            }
                         }
                     }
                     else{
@@ -235,6 +243,11 @@ public class MainActivity extends AppCompatActivity {
 
                 ArrayAdapter<String> adapter= new ArrayAdapter<String>(getApplicationContext(),android.R.layout.simple_list_item_1,deviceNameArray);
                 listView.setAdapter(adapter);
+                String mseg = "\nPeers";
+                for(WifiP2pDevice dev: peerList.getDeviceList()){
+                    mseg += "\n" + dev.deviceAddress;
+                }
+                Log.d("onPeersAvailable", mseg);
             }
             if (peers.size()==0){
                 Toast.makeText(getApplicationContext(),"No device Found",Toast.LENGTH_SHORT).show();
@@ -261,9 +274,7 @@ public class MainActivity extends AppCompatActivity {
                 connectionStatus.setText("Client");
                 clientClass=new ClientClass(groupOwnerAddress);
                 clientClass.start();
-
                 serverCreated = false;
-
             }
             else{
                 groupCreated = false;
@@ -288,6 +299,7 @@ public class MainActivity extends AppCompatActivity {
         ServerSocket serverSocket;
         public ServerClass(){
             sendReceiveArrayList = new ArrayList<SendReceive>();
+            sendReceiveHashMap = new HashMap<InetAddress, SendReceive>();
         }
         @Override
         public  void run(){
@@ -297,14 +309,35 @@ public class MainActivity extends AppCompatActivity {
                 while(true) {
                     Log.d("ServerClass", "run() listening to connections");
                     socket = serverSocket.accept();
+                    socket.setKeepAlive(true);
                     Log.d("ServerClass", "run() accepted connection from "+socket.getInetAddress().getHostName());
                     sendReceive = new SendReceive(socket);
                     sendReceiveArrayList.add(sendReceive);
-                    Log.d("SendReceive Size", String.valueOf(sendReceiveArrayList.size()));
-                    Log.d("ServerClass", "run() added client to sendReceiveArrayList");
+                    if(!sendReceiveHashMap.containsKey(socket.getInetAddress())) {
+                        sendReceiveHashMap.put(socket.getInetAddress(), sendReceive);
+                    }
+                    else{
+                        try{
+                            socket.close();
+                        }
+                        catch (Exception e){
+                            e.printStackTrace();
+                        }
+                        finally {
+                            sendReceiveHashMap.remove(socket.getInetAddress());
+                            sendReceiveHashMap.put(socket.getInetAddress(), sendReceive);
+                        }
+
+                    }
+                    Log.d("SendReceive Size", String.valueOf(sendReceiveHashMap.size()));
+                    Log.d("ServerClass", "run() added client to sendReceiveHashMap");
                     sendReceive.start();
                 }
-            } catch (IOException e) {
+            }catch(SocketException se){
+                se.printStackTrace();
+                sendReceiveHashMap.remove(socket.getInetAddress());
+            }
+            catch (IOException e) {
                 e.printStackTrace();
             }
 
@@ -339,7 +372,7 @@ public class MainActivity extends AppCompatActivity {
                         handler.obtainMessage(MESSAGE_READ,bytes,-1 ,buffer).sendToTarget();
                         if(serverCreated) {
                             Log.d("Forwarding", "Start forwarding messages because I'm the GO");
-                            for (SendReceive sendReceiveDevice : sendReceiveArrayList) {
+                            for (SendReceive sendReceiveDevice : sendReceiveHashMap.values()) {
                                 if (sendReceiveDevice != this) {
                                     Log.d("Forwarding Message", "from "+socket.getInetAddress().getHostAddress()+
                                             " to "+sendReceiveDevice.socket.getInetAddress().getHostAddress());
@@ -357,7 +390,6 @@ public class MainActivity extends AppCompatActivity {
         }
         public void write(byte[] bytes){
             try {
-
                 outputStream.write(bytes);
             } catch (IOException e) {
                 e.printStackTrace();
@@ -378,6 +410,7 @@ public class MainActivity extends AppCompatActivity {
         @Override
         public void run() {
             try {
+                socket.setKeepAlive(true);
                 socket.connect(new InetSocketAddress(hostAdd,2323),500);
                 sendReceive =new SendReceive(socket);
                 Log.d("ClientClass", "run() sendReceive Object Created");
