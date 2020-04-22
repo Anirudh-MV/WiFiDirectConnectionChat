@@ -18,6 +18,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Message;
 import android.os.StrictMode;
+import android.util.Log;
 import android.view.View;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
@@ -59,6 +60,8 @@ public class MainActivity extends AppCompatActivity {
     ClientClass clientClass;
     SendReceive sendReceive;
 
+    boolean groupCreated;
+    boolean serverCreated;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -78,6 +81,8 @@ public class MainActivity extends AppCompatActivity {
                     byte[] readBuff=(byte[]) msg.obj;
                     String tempMsg=new String(readBuff,0,msg.arg1);
                     read_msg_box.setText(tempMsg);
+                    Log.d("Message - ", tempMsg);
+
                     break;
             }
             return true;
@@ -118,19 +123,22 @@ public class MainActivity extends AppCompatActivity {
         btnCreateGroup.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
-                mManager.createGroup(mChannel, new WifiP2pManager.ActionListener() {
+                if(!groupCreated)
+                {
+                    mManager.createGroup(mChannel, new WifiP2pManager.ActionListener() {
 
-                    @Override
-                    public void onSuccess() {
-                        Toast.makeText(getApplicationContext(),"group successfully created ",Toast.LENGTH_SHORT).show();
+                        @Override
+                        public void onSuccess() {
+                            Toast.makeText(getApplicationContext(),"group successfully created ",Toast.LENGTH_SHORT).show();
+                            groupCreated = true;
+                        }
 
-                    }
-
-                    @Override
-                    public void onFailure(int reason) {
-                        Toast.makeText(getApplicationContext(),"group not created!!",Toast.LENGTH_SHORT).show();
-                    }
-                });
+                        @Override
+                        public void onFailure(int reason) {
+                            Toast.makeText(getApplicationContext(),"group not created!!",Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                }
             }
         });
         listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
@@ -236,14 +244,23 @@ public class MainActivity extends AppCompatActivity {
 
             if(info.groupFormed && info.isGroupOwner){
                 connectionStatus.setText("HOST");
-                serverClass=new ServerClass();
-                serverClass.start();
+                Log.d("ConnInfoListener", "I am GO");
+                if(!serverCreated) {
+                    serverClass = new ServerClass();
+                    serverClass.start();
+                    serverCreated = true;
+                }
             }
             else if(info.groupFormed ){
                 connectionStatus.setText("Client");
                 clientClass=new ClientClass(groupOwnerAddress);
                 clientClass.start();
 
+                serverCreated = false;
+
+            }
+            else{
+                groupCreated = false;
             }
         }
     };
@@ -262,16 +279,25 @@ public class MainActivity extends AppCompatActivity {
 
     public class ServerClass extends  Thread{
         Socket socket;
+        ArrayList<Socket> socketArray;
         ServerSocket serverSocket;
-
+        ArrayList<SendReceive> sendReceiveArrayList;
+        public ServerClass(){
+            socketArray = new ArrayList<Socket>();
+            sendReceiveArrayList = new ArrayList<SendReceive>();
+        }
         @Override
         public  void run(){
             try {
                 serverSocket=new ServerSocket(2323);
                 serverSocket.setReuseAddress(true);
                 while(true) {
+                    Log.d("ServerClass", "run() listening to connections");
                     socket = serverSocket.accept();
+                    Log.d("ServerClass", "run() accepted connection from "+socket.getInetAddress().getHostName());
                     sendReceive = new SendReceive(socket);
+                    sendReceiveArrayList.add(sendReceive);
+                    Log.d("ServerClass", "run() added client to sendReceiveArrayList");
                     sendReceive.start();
                 }
             } catch (IOException e) {
@@ -306,7 +332,7 @@ public class MainActivity extends AppCompatActivity {
                     bytes=inputStream.read(buffer);
                     if(bytes>0){
                         handler.obtainMessage(MESSAGE_READ,bytes,-1 ,buffer).sendToTarget();
-
+                        Log.d("MessageReceived", "from "  + socket.getInetAddress().getHostAddress());
                     }
 
                 } catch (IOException e) {
@@ -333,7 +359,6 @@ public class MainActivity extends AppCompatActivity {
         {
             hostAdd=hostAddress.getHostAddress();
             socket=new Socket();
-
         }
 
         @Override
@@ -341,6 +366,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 socket.connect(new InetSocketAddress(hostAdd,2323),500);
                 sendReceive =new SendReceive(socket);
+                Log.d("ClientClass", "run() sendReceive Object Created");
                 sendReceive.start();
             } catch (IOException e) {
                 e.printStackTrace();
