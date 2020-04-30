@@ -312,51 +312,83 @@ public class MainActivity extends AppCompatActivity {
                     socket.setKeepAlive(true);
                     Log.d("ServerClass", "run() accepted connection from "+socket.getInetAddress().getHostName());
                     sendReceive = new SendReceive(socket);
-                    sendReceiveArrayList.add(sendReceive);
-                    if(!sendReceiveHashMap.containsKey(socket.getInetAddress())) {
-                        sendReceiveHashMap.put(socket.getInetAddress(), sendReceive);
-                    }
-                    else{
-                        try{
-                            socket.close();
-                        }
-                        catch (Exception e){
-                            e.printStackTrace();
-                        }
-                        finally {
-                            sendReceiveHashMap.remove(socket.getInetAddress());
-                            sendReceiveHashMap.put(socket.getInetAddress(), sendReceive);
-                        }
-
-                    }
+//                    sendReceiveArrayList.add(sendReceive);
+//                    if(!sendReceiveHashMap.containsKey(socket.getInetAddress())) {
+//                        sendReceiveHashMap.put(socket.getInetAddress(), sendReceive);
+//                    }
+//                    else{
+//                        try{
+//                            socket.close();
+//                        }
+//                        catch (Exception e){
+//                            e.printStackTrace();
+//                        }
+//                        finally {
+//                            sendReceiveHashMap.remove(socket.getInetAddress());
+//                            sendReceiveHashMap.put(socket.getInetAddress(), sendReceive);
+//                        }
+//
+//                    }
+                    sendReceiveHashMap.put(socket.getInetAddress(), sendReceive); //comment this line if the above lines are not commented
                     Log.d("SendReceive Size", String.valueOf(sendReceiveHashMap.size()));
                     Log.d("ServerClass", "run() added client to sendReceiveHashMap");
                     sendReceive.start();
                 }
-            }catch(SocketException se){
+            } catch(IOException se){
                 se.printStackTrace();
-                sendReceiveHashMap.remove(socket.getInetAddress());
+                try {
+                    sendReceiveHashMap.remove(socket.getInetAddress());
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
             }
-            catch (IOException e) {
+
+        }
+    }
+    public  class ClientClass extends Thread{
+        Socket socket;
+        String hostAdd;
+
+        public ClientClass(InetAddress hostAddress)
+        {
+            hostAdd=hostAddress.getHostAddress();
+        }
+
+        @Override
+        public void run() {
+            try {
+                socket=new Socket();
+                socket.setKeepAlive(true);
+                socket.connect(new InetSocketAddress(hostAdd,2323),500);
+                sendReceive =new SendReceive(socket);
+                Log.d("ClientClass", "run() sendReceive Object Created");
+                sendReceive.start();
+            } catch (IOException e) {
+                socket = new Socket();
                 e.printStackTrace();
             }
 
         }
     }
+
+
     private  class SendReceive extends Thread{
         private Socket socket;
+        private InetAddress inetAddress;
         private InputStream inputStream;
         private OutputStream outputStream;
+        public boolean listening;
 
         public SendReceive(Socket socket)  {
             this.socket=socket;
+            this.listening = true;
+            this.inetAddress = socket.getInetAddress();
             try {
                 inputStream=this.socket.getInputStream();
                 outputStream=this.socket.getOutputStream();
             } catch (IOException e) {
                 e.printStackTrace();
             }
-
         }
 
         @Override
@@ -364,7 +396,7 @@ public class MainActivity extends AppCompatActivity {
             byte[] buffer=new byte[1024];
             int bytes;
 
-            while(socket!=null){
+            while(socket!=null && listening){
                 try {
                     bytes=inputStream.read(buffer);
                     if(bytes>0){
@@ -382,8 +414,34 @@ public class MainActivity extends AppCompatActivity {
                         }
                     }
 
-                } catch (IOException e) {
+                } catch (Exception e) {
                     e.printStackTrace();
+                    if(inputStream == null){
+                        Log.d("SendReceive run()", "inputStream is null");
+                    }
+                    try {
+                        if(!serverCreated){
+                            this.listening = false;
+                            this.socket.close();
+                        }
+                        Log.d("Socket Closing","Closing socket due to error IOException");
+                    }
+                    catch(Exception e2){
+                        e2.printStackTrace();
+                    }
+                    finally{
+                        if(serverCreated) {
+                            sendReceiveHashMap.remove(this.inetAddress);
+                            Log.d("Socket Closing","Removed from sendReceiveHashMap");
+                            Log.d("Socket Closing","items in sendReceiveHashMap = "+ sendReceiveHashMap.size());
+
+                            this.socket = null;
+                        }
+                        else{
+                            sendReceive = null;
+                            this.socket = null;
+                        }
+                    }
                 }
 
             }
@@ -391,34 +449,27 @@ public class MainActivity extends AppCompatActivity {
         public void write(byte[] bytes){
             try {
                 outputStream.write(bytes);
+                Log.d("Sending message", String.valueOf(bytes));
             } catch (IOException e) {
                 e.printStackTrace();
+                try {
+                    if(!serverCreated){
+                        this.listening = false;
+                        this.socket.close();
+                    }
+
+                }
+                catch(Exception e2){
+                    e2.printStackTrace();
+                }
+                finally{
+                    if(serverCreated)
+                        sendReceiveHashMap.remove(this.inetAddress);
+                    else{
+                        sendReceive = null;
+                    }
+                }
             }
-        }
-    }
-    public  class ClientClass extends Thread{
-        Socket socket;
-        String hostAdd;
-
-
-        public ClientClass(InetAddress hostAddress)
-        {
-            hostAdd=hostAddress.getHostAddress();
-            socket=new Socket();
-        }
-
-        @Override
-        public void run() {
-            try {
-                socket.setKeepAlive(true);
-                socket.connect(new InetSocketAddress(hostAdd,2323),500);
-                sendReceive =new SendReceive(socket);
-                Log.d("ClientClass", "run() sendReceive Object Created");
-                sendReceive.start();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-
         }
     }
 }
